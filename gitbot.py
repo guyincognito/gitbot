@@ -39,6 +39,7 @@ USERNAME = config.get('github', 'username')
 PERSONAL_ACCESS_TOKEN = config.get('github', 'personal_access_token')
 GITHUB_API_ENDPOINT = config.get('github', 'endpoint')
 GITHUB_HOSTNAME = config.get('github', 'hostname')
+GITHUB_VALID_DOMAINS = config.get('github', 'domains')
 
 def _generate_html_diff(diff_output):
     """Take a diff string and convert it to syntax highligted HTML
@@ -431,43 +432,272 @@ def _generate_github_rebase_comment(url_root, base_branch_name, latest_rebase):
     return comment_block
 
 
-def _check_for_fixup_or_squash_commits(log_start_ref, log_end_ref):
-    """Check log range for fixup! or squash! commits
+def _validate_email(email_addr, addr_type):
+    """Check the Committer and Author values of a commit
 
-    Check whether fixup! or squash! commits are present in the log range.
+    Check whether the Committer and Author values are using their first
+    and last name as the display name and a valid domain in their email
+    address.
+
+    If the values do not pass the checks, then return a list of strings
+    that explain each error.
 
     Args:
-        log_start_ref: ref to exclude commits reachable from it
-        log_end_ref: ref to include commits reachable from it
+        email_addr: Address corresponding to the commit
+        addr_type: either 'Author' or 'Committer'
 
-    Returns;
-        A list of sha1 values where the shortlog message starts wtih "fixup! "
-        or "squash! ".
+    Returns:
+        A list of strings corresponding to each error
     """
-    # Run git log --oneline 
-    # FETCH_HEAD..org/repo/PR/pr_number/base_branch/rebase-head/0
-    log_oneline_cmd = shlex.split(
-        'git log --format="%H %s"
-        {log_start_ref}..{log_end_ref}'.format(
-            log_start_ref=log_start_ref, log_end_ref=log_end_ref))
-    log_oneline_output = subprocess.check_output(log_oneline_cmd)
+    errors = []
+    display_name, email_address = email_addr.rsplit(' ', 1)
+    email_address = email_address.strip('<>')
 
-    sha1s = []
-    for line in log_oneline_output.splitlines():
-        if not line:
+    if display_name == 'root':
+        errors.append('{addr_type} is root instead of real name'.format(
+            addr_type=addr_type))
+
+    if ' ' not in display_name:
+        errors.append(
+            '{addr_type} does not contain first and last name'.format(
+                addr_type=addr_type))
+
+    email_local, email_domain = email_address.rsplit('@', 1)
+
+    github_domain_list = filter(lambda x: x, GITHUB_VALID_DOMAINS.splitlines())
+    if email_domain not in github_domain_list:
+        errors.append(
+            '{addr_type} email address domain must be in {domains}'.format(
+                addr_type=addr_type, domains=github_domain_list))
+
+    return errors
+
+
+def _validate_commit(
+        commit_sha1, author, committer, title, separator, body):
+    """Check the commit message and commit diff.
+
+    The commit message is checked for the following
+
+    * Title is 50 characters or less
+    * Title is in imperative mood
+    * Title begins with a capital letter
+    * Title does not end in punctuation or whitespace
+    * There is a blank line separating the title and body
+    * The commit message body lines do not exceed 72 characters
+    * The commit title doesn't start with fixup! or squash!
+
+    The commit diff is checked to verify that it doesn't introduce
+    trailing whitespace or extra blank lines at the end of the file.
+
+    Args:
+        commit_sha1: The full sha1 of the commit
+        author: The author value of the commit
+        committer: The committer value of the commit
+        separator: The line separating the title and the body of the
+            commit message
+        body: The body of the commit message (a list of strings where
+            each element corresponds to a line in the body)
+
+    Returns:
+        A dict that corresponds to the HTTP POST body to send to the
+        Github commit status endpoint.
+    """
+    errors = []
+
+    author_errors = validate_email(author, 'Author')
+    committer_errors = validate_email(committer, 'Committer')
+    errors.extend(author_errors)
+    errors.extend(committer_errors)
+
+    title_words = title.split(' ', 1)
+
+    # Check if in imperative tense
+    if re.search(r'(ed|ing)$', title_words[0]):
+        errors.append('Commit title is not in imperative tense')
+
+    # Check if first word is capitalized
+    if re.match(r'^[^A-Z]', title_words[0]):
+        errors.append('Commit title is not capitalized')
+
+    # Check if this is a fixup! commit
+    if re.match('r^fixup!', title_words[0]):
+        errors.append('Commit title starts with fixup! ')
+
+    # Check if this is a squash! commit
+    if re.match('r^squash!', title_words[0]):
+        errors.append('Commit title starts with squash! ')
+
+    # Check if the commit title ends in whitespace or punctuation
+    if len(title_words) > 1 and re.search(r'[\s\W]$', title_words[1]):
+        errors.append('Commit title ends in whitespace or punctuation')
+
+    # Check if the title is greater than 50 characters in length
+    if len(title) > 50:
+        errors.append('Commit title longer than 50 characters')
+
+    if separator is not None:
+        # Check if commit message body is missing (if there is a separator)
+        if body == []:
+            errors.append('Missing commit message body')
+
+        # Check if any line in the body is greater than 72 characters in legnth
+        for body_line in body:
+            if len(body_line) <= 72:
+                continue
+            errors.append('Commit message body line > 72 characters')
+            break
+
+    # Check if commit is a merge commit
+    if merge is not None:
+        errors.append('Commit is a merge commit')
+
+    # Check commit diff for whitespace errors
+    git_diff_cmd = shlex.split(
+        'git show --check {commit_sha1}'.format(
+            commit_sha1=commit_sha1))
+
+    has_whitespace_issue = None
+    f, _ = tempfile.mkstemp()
+    has_whitespace_issue = subprocess.call(git_diff_cmd,
+        stdout=f, stderr=f, close_fds=True)
+
+    if has_whitespace_issue:
+        errors.append(
+            'Commit diff has whitespace issues')
+
+    return errors
+
+
+def _parse_commit_log(base_commit, tip_commit):
+    """Parse the output of git log --format=full <commit_range>
+
+    This parses the output of git log --format-full <commit_range>,
+    extracts the commit sha1, author, committer, commit title, commit
+    separator, and commit message body values and passes them to other
+    methods to validate their format
+
+    Args:
+        base_commit: commit sha1 value that it, along with its ancestors
+            should be excluded from the git log output
+        tip_commit: commit sha1 value that it, along with its ancestors
+            should be included in the git log output
+
+    Returns:
+        A dict indexed by commit sha1 values where each value is a list of
+        strings that describe any issues found for that commit
+    """
+
+    class LogState(object):
+        SEPARATOR_LINE = 0
+        COMMIT_SHA1_LINE = 1
+        MERGE_LINE = 2
+        AUTHOR_LINE = 3
+        COMMITTER_LINE = 4
+        MIDDLE_SEPARATOR_LINE = 5
+        TITLE_LINE = 6
+        BLANK_LINE = 7
+        BODY_LINES = 8
+
+    commit_info = {}
+
+    git_log_cmd = shlex.split(
+        'git log --format=full {base_commit}..{tip_commit}'.format(
+            base_commit=base_commit, tip_commit=tip_commit))
+    git_log_output = subprocess.check_output(git_log_cmd)
+
+    log_line_state = LogState.SEPARATOR_LINE
+    commit_sha1 = None
+    merge = None
+    author = None
+    committer = None
+    title = None
+    separator = None
+    body = []
+    for line in git_log_output.splitlines():
+
+        # commit line
+        if (
+                log_line_state == LogState.SEPARATOR_LINE and
+                line.startswith('commit ')):
+            commit_sha1 = line.split(' ')[1]
+            log_line_state = LogState.COMMIT_SHA1_LINE
             continue
 
-        sha1, shortlog = line.split(' ', 1)
-        fixup_or_squash = (
-            shortlog.startswith('fixup! ') or
-            shortlog.startswith('squash! '))
-
-        # We don't care about regular commits here
-        if not fixup_or_squash:
+        # Merge: line
+        if (
+                log_line_state == LogState.COMMIT_SHA1_LINE and
+                line.startswith('Merge: ')):
+            merge = line.split(' ', 1)[1]
+            log_line_state = LogState.MERGE_LINE
             continue
-        sha1s.append(sha1)
 
-    return sha1s
+        # Author: line
+        if (
+                log_line_state in [
+                    LogState.COMMIT_SHA1_LINE, LogState.MERGE_LINE] and
+                line.startswith('Author: ')):
+            author = line.split(' ', 1)[1]
+            log_line_state = LogState.AUTHOR_LINE
+            continue
+
+        # Commit: line
+        if log_line_state == LogState.AUTHOR_LINE and line.startswith('Commit: '):
+            committer = line.split(' ', 1)[1]
+            log_line_state = LogState.COMMITTER_LINE
+            continue
+
+        # empty line after Commit: line
+        if log_line_state == LogState.COMMITTER_LINE and line == '':
+            log_line_state = LogState.MIDDLE_SEPARATOR_LINE
+            continue
+
+        # Title line of commit message
+        if (
+                log_line_state == LogState.MIDDLE_SEPARATOR_LINE and
+                line.startswith('    ')):
+            title = line.lstrip('    ')
+            log_line_state = LogState.TITLE_LINE
+            continue
+
+        # Blank line between title and body (still contains 4 space prefix)
+        if log_line_state == LogState.TITLE_LINE and line.startswith('    '):
+            separator = line.lstrip('    ')
+            log_line_state = LogState.BLANK_LINE
+            continue
+
+        # Body lines
+        if (
+                log_line_state in [LogState.BLANK_LINE, LogState.BODY_LINES] and
+                line.startswith('    ')):
+            body.append(line.lstrip('    '))
+            log_line_state = LogState.BODY_LINES
+            continue
+
+        # End of commit message
+        if (
+                log_line_state in [
+                    LogState.TITLE_LINE, LogState.BLANK_LINE, LogState.BODY_LINES] and
+                line == ''):
+
+            commit_status = validate_commit(
+                commit_sha1, author, committer, title, separator, body)
+
+
+            commit_info[commit_sha1] = commit_status
+
+            # Post commit status to Github API
+
+            log_line_state = LogState.SEPARATOR_LINE
+            commit_sha1 = None
+            merge = None
+            author = None
+            committer = None
+            title = None
+            separator = None
+            body = []
+
+        return commit_info
 
 
 # TODO:
@@ -568,10 +798,13 @@ def check_rebase():
                 'rebase-head/0'.format(
                     org=org_name, repo=repo_name, pr_number=pr_number,
                     base_branch_name=base_branch_name))
-            fixup_or_squash_commits = _check_for_fixup_or_squash_commits(
-                log_start_ref, log_end_ref) 
+            commit_info = _parse_commit_log(log_start_ref, log_end_ref)
 
-            for sha1 in fixup_or_squash_commits:
+            for sha1, errors in commit_info.items():
+                # If there are no issues with the commit, then skip it
+                if errors == []:
+                    continue
+
                 # Check the status of the commit
                 status_url = (
                     '{endpoint}/repos/{org}/{repo}/commits/{sha1}/'
@@ -599,8 +832,7 @@ def check_rebase():
                 post_body = {
                     'status': 'failure',
                     'context': 'gitbot',
-                    'description': (
-                        '"fixup! " or "squash! " commits cannot be merged')
+                    'description': ' '.join(errors)
                 }
 
                 # Set the status for this commit
@@ -762,10 +994,14 @@ def check_rebase():
 
         log_start_ref = 'FETCH_HEAD'
         log_end_ref = local_branch_name
-        fixup_or_squash_commits = _check_for_fixup_or_squash_commits(
-            log_start_ref, log_end_ref) 
+        commit_info = _parse_commit_log(log_start_ref, log_end_ref)
 
-        for sha1 in fixup_or_squash_commits:
+        for sha1, errors in commit_info.items():
+
+            # If this commit has no issues, then move onto the next one
+            if errors == []:
+                continue
+
             # Check the status of the commit
             status_url = (
                 '{endpoint}/repos/{org}/{repo}/commits/{sha1}/'
@@ -793,8 +1029,7 @@ def check_rebase():
             post_body = {
                 'status': 'failure',
                 'context': 'gitbot',
-                'description': (
-                    '"fixup! " or "squash! " commits cannot be merged')
+                'description': ' '.join(errors)
             }
 
             # Set the status for this commit
