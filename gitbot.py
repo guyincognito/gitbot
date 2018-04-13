@@ -133,7 +133,7 @@ def _generate_side_by_side_html_diff(
         '-c "qa!" '
         '-- {string_output_files}'.format(
             side_by_side_html_output_file=side_by_side_html_output_file.name,
-            string_output_files=' '.join(string_output_files))
+            string_output_files=' '.join(string_output_files)))
  
     subprocess.call(vim_side_by_side_cmd)
  
@@ -812,7 +812,7 @@ def check_rebase():
                         endpoint=GITHUB_API_ENDPOINT, org=org_name,
                         repo=repo_name, sha1=sha1))
                 http_auth = auth=requests.auth.HTTPBasicAuth(
-                    USERNAME, PERSONAL_ACCESS_TOKEN))
+                    USERNAME, PERSONAL_ACCESS_TOKEN)
 
                 responses_json = requests.api.get(status_url, auth=http_auth)
                 responses = responses_json.json()
@@ -947,7 +947,7 @@ def check_rebase():
                 subprocess.call(new_branch_cmd)
 
             comment = _generate_github_rebase_comment(
-                url_root, base_branch_name, latest_rebase):
+                url_root, base_branch_name, latest_rebase)
 
 
             # Post the comment on the Github PR
@@ -958,7 +958,7 @@ def check_rebase():
                     pr_number=pr_number))
             post_body = {'body': comment},
             http_auth = auth=requests.auth.HTTPBasicAuth(
-                USERNAME, PERSONAL_ACCESS_TOKEN))
+                USERNAME, PERSONAL_ACCESS_TOKEN)
 
             response = requests.api.post(
                 post_url, json=post_body, auth=http_auth)
@@ -1009,7 +1009,7 @@ def check_rebase():
                     endpoint=GITHUB_API_ENDPOINT, org=org_name,
                     repo=repo_name, sha1=sha1))
             http_auth = auth=requests.auth.HTTPBasicAuth(
-                USERNAME, PERSONAL_ACCESS_TOKEN))
+                USERNAME, PERSONAL_ACCESS_TOKEN)
 
             responses_json = requests.api.get(status_url, auth=http_auth)
             responses = responses_json.json()
