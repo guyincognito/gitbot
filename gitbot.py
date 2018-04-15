@@ -1,8 +1,8 @@
 import ConfigParser
 import json
 import os
-from subprocess import call, check_output, CalledProcessError
 import shlex
+import subprocess
 import tempfile
 import textwrap
 
