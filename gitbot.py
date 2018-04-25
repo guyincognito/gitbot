@@ -6,6 +6,7 @@ import shlex
 import subprocess
 import tempfile
 import textwrap
+import time
 
 from bs4 import BeautifulSoup
 
@@ -149,7 +150,8 @@ def _generate_side_by_side_html_diff(
     return side_by_side_html_output
 
 
-def _generate_github_rebase_comment(url_root, base_branch_name, latest_rebase):
+def _generate_github_rebase_comment(
+        sender, url_root, base_branch_name, latest_rebase):
     rebase_diff_url_params = {
         'url_root': url_root,
         'branch_name': base_branch_name,
@@ -420,11 +422,14 @@ def _generate_github_rebase_comment(url_root, base_branch_name, latest_rebase):
         '''.format(**rebase_commit_log_series_links))
  
     comment_block = textwrap.dedent('''
+        {sender} rebased the branch
+
         {rebase_diff_block}
         {rebase_commit_log_block}
         {rebase_diff_series_block}
         {rebase_commit_log_series_block}
         '''.format(
+            sender=sender,
             rebase_diff_block=rebase_diff_block,
             rebase_commit_log_block=rebase_commit_log_block,
             rebase_diff_series_block=rebase_diff_series_block,
@@ -523,11 +528,11 @@ def _validate_commit(
         errors.append('Commit title is not capitalized')
 
     # Check if this is a fixup! commit
-    if re.match('r^fixup!', title_words[0]):
+    if re.match(r'^fixup!', title_words[0]):
         errors.append('Commit title starts with fixup! ')
 
     # Check if this is a squash! commit
-    if re.match('r^squash!', title_words[0]):
+    if re.match(r'^squash!', title_words[0]):
         errors.append('Commit title starts with squash! ')
 
     # Check if the commit title ends in whitespace or punctuation
@@ -618,14 +623,11 @@ def _parse_commit_log(base_commit, tip_commit):
     body = []
     git_log_output_lines = git_log_output.splitlines()
     for idx, line in enumerate(git_log_output_lines, 1):
-        print 'idx {0} len(git_log_output_lines) {1}'.format(idx, len(git_log_output_lines))
         # commit line
         if (
                 log_line_state == LogState.SEPARATOR_LINE and
                 line.startswith('commit ')):
-            print 'commit line'
             commit_sha1 = line.split(' ')[1]
-            print 'commit_sha1 {0}'.format(commit_sha1)
             log_line_state = LogState.COMMIT_SHA1_LINE
             continue
 
@@ -633,9 +635,7 @@ def _parse_commit_log(base_commit, tip_commit):
         if (
                 log_line_state == LogState.COMMIT_SHA1_LINE and
                 line.startswith('Merge: ')):
-            print 'Merge: line'
             merge = line.split(' ', 1)[1]
-            print 'merge {0}'.format(merge)
             log_line_state = LogState.MERGE_LINE
             continue
 
@@ -644,23 +644,18 @@ def _parse_commit_log(base_commit, tip_commit):
                 log_line_state in [
                     LogState.COMMIT_SHA1_LINE, LogState.MERGE_LINE] and
                 line.startswith('Author: ')):
-            print 'Author: line'
             author = line.split(' ', 1)[1]
-            print 'author {0}'.format(author)
             log_line_state = LogState.AUTHOR_LINE
             continue
 
         # Commit: line
         if log_line_state == LogState.AUTHOR_LINE and line.startswith('Commit: '):
-            print 'Commit: line'
             committer = line.split(' ', 1)[1]
-            print 'committer {0}'.format(committer)
             log_line_state = LogState.COMMITTER_LINE
             continue
 
         # empty line after Commit: line
         if log_line_state == LogState.COMMITTER_LINE and line == '':
-            print 'empty line after Commit: line'
             log_line_state = LogState.MIDDLE_SEPARATOR_LINE
             continue
 
@@ -668,9 +663,7 @@ def _parse_commit_log(base_commit, tip_commit):
         if (
                 log_line_state == LogState.MIDDLE_SEPARATOR_LINE and
                 line.startswith('    ')):
-            print 'Title line of commit message'
             title = line.lstrip('    ')
-            print 'title {0}'.format(title)
             log_line_state = LogState.TITLE_LINE
 
             if idx < len(git_log_output_lines):
@@ -683,9 +676,7 @@ def _parse_commit_log(base_commit, tip_commit):
 
         # Blank line between title and body (still contains 4 space prefix)
         if log_line_state == LogState.TITLE_LINE and line.startswith('    '):
-            print 'Blank line between title and body (still contains 4 space prefix)'
             separator = line.lstrip('    ')
-            print 'separator "{0}"'.format(separator)
             log_line_state = LogState.BLANK_LINE
 
             if idx < len(git_log_output_lines):
@@ -700,8 +691,6 @@ def _parse_commit_log(base_commit, tip_commit):
         if (
                 log_line_state in [LogState.BLANK_LINE, LogState.BODY_LINES] and
                 line.startswith('    ')):
-            print 'Body lines'
-            print line.lstrip('    ')
             body.append(line.lstrip('    '))
             log_line_state = LogState.BODY_LINES
 
@@ -720,7 +709,6 @@ def _parse_commit_log(base_commit, tip_commit):
                     LogState.BODY_LINES] and
                 line == ''):
 
-            print 'End of commit message'
             commit_status = _validate_commit(
                 commit_sha1, merge, author, committer, title, separator, body)
 
@@ -735,21 +723,10 @@ def _parse_commit_log(base_commit, tip_commit):
             separator = None
             body = []
 
-        print 'commit_status {0}'.format(commit_status)
-
-    print 'commit_info {0}'.format(commit_info)
     return commit_info
 
 
 # TODO:
-# Use the github API to also update the merge status based on whether there
-# are fixup or squash commits in the branch.  If there are, we don't want
-# people to merge the branch.
-#
-# POST /repos/:owner/:repo/statuses/:sha
-#
-# can be used to set the status for a particular commit
-#
 # This would need to be done when a PR is opened or a commit is pushed to
 # the PR branch (which this method already checks for)
 #
@@ -845,8 +822,6 @@ def check_rebase():
             commit_info = _parse_commit_log(log_start_ref, log_end_ref)
 
             for sha1, errors in commit_info.items():
-                print 'sha1 {0}'.format(sha1)
-                print 'errors {0}'.format(errors)
                 # If there are no issues with the commit, then skip it
                 if errors == []:
                     continue
@@ -883,8 +858,6 @@ def check_rebase():
 
                 # Set the status for this commit
                 response = requests.api.post(status_url, json=post_body, auth=http_auth)
-                print 'response.status_code {0}'.format(response.status_code)
-                print 'response.text {0}'.format(response.text)
 
     # The event type is a push to the remote
     elif event_type in ['push']:
@@ -901,6 +874,11 @@ def check_rebase():
         # find the sha1 value of that branch and compare it to the event sent
         # to use by github (the after value).  The branch that matches, if any,
         # will correspond to the pull request that was just updated.
+
+        # Sleep for a second before calling ls-remote since Github will
+        # sometimes send webhook events before it updates its git remote
+        # endpoint branch head information
+        time.sleep(1)
         git_ls_remote_cmd = shlex.split(
             'git ls-remote {url} refs/pull/*/head'.format(url=ssh_url))
         ls_remote_output = subprocess.check_output(git_ls_remote_cmd)
@@ -995,7 +973,7 @@ def check_rebase():
                 subprocess.call(new_branch_cmd)
 
             comment = _generate_github_rebase_comment(
-                url_root, base_branch_name, latest_rebase)
+                sender, url_root, base_branch_name, latest_rebase)
 
             # Post the comment on the Github PR
             post_url = (
@@ -1030,7 +1008,7 @@ def check_rebase():
         # Determine the base branch of the PR
         # AA/shark-github/PR/4/master/rebase-{base,head}/9
         _, _, _, _, base_branch_name, _, _ = local_branch_name.split('/')
-
+        
         # Check list of commits in branch to see if there are any
         # fixup or squash commits
         fetch_base_cmd = shlex.split(
@@ -1045,9 +1023,8 @@ def check_rebase():
         log_end_ref = local_branch_name
         commit_info = _parse_commit_log(log_start_ref, log_end_ref)
 
+        branch_status_set = False
         for sha1, errors in commit_info.items():
-            print 'sha1 {0}'.format(sha1)
-            print 'errors {0}'.format(errors)
 
             # If this commit has no issues, then move onto the next one
             if errors == []:
@@ -1066,11 +1043,12 @@ def check_rebase():
             responses = responses_json.json()
 
             status_set = False
-            for reponse in responses:
+            for response in responses:
                 if (
                         response['context'] == 'gitbot' and
                         response['state'] == 'failure'):
                     status_set = True
+                    branch_status_set = True
                     break
 
             # If status is already set, then we don't need to set it again
@@ -1082,11 +1060,46 @@ def check_rebase():
                 'context': 'gitbot',
                 'description': '. '.join(errors)
             }
-
             # Set the status for this commit
             response = requests.api.post(status_url, json=post_body, auth=http_auth)
-            print 'response.status_code {0}'.format(response.status_code)
-            print 'response.text {0}'.format(response.text)
+
+        # Even if one or more commits are marked as failed in a branch that's
+        # pull requested, Github will still consider the branch to be in a good
+        # state if the head commit is not marked as failed.  To get around
+        # this, if any of the commits in the branch are marked as failed, we
+        # mark the head commit the same way (even if there's nothing else wrong
+        # with it).
+        if branch_status_set:
+            status_url = (
+                '{endpoint}/repos/{org}/{repo}/commits/{sha1}/'
+                'statuses'.format(
+                    endpoint=GITHUB_API_ENDPOINT, org=org_name,
+                    repo=repo_name, sha1=sha_after))
+            http_auth = auth=requests.auth.HTTPBasicAuth(
+                USERNAME, PERSONAL_ACCESS_TOKEN)
+
+            responses_json = requests.api.get(status_url, auth=http_auth)
+            responses = responses_json.json()
+
+            status_set = False
+            for response in responses:
+                if (
+                        response['context'] == 'gitbot' and
+                        response['state'] == 'failure'):
+                    status_set = True
+                    break
+
+            # If status is already set, then we don't need to set it again
+            if not status_set:
+                post_body = {
+                    'state': 'failure',
+                    'context': 'gitbot',
+                    'description': 'Branch contains commits in failure state'
+                }
+
+                # Set the status for this commit
+                response = requests.api.post(
+                    status_url, json=post_body, auth=http_auth)
 
     return ''
 
