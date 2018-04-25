@@ -1,6 +1,7 @@
 import ConfigParser
 import json
 import os
+import re
 import shlex
 import subprocess
 import tempfile
@@ -114,7 +115,7 @@ def _generate_side_by_side_html_diff(
         if not string_output:
             break
         temp_file = tempfile.NamedTemporaryFile(delete=False)
-        with open(temp_file) as t:
+        with open(temp_file.name, 'w') as t:
             t.write(string_output)
         string_output_files.append(temp_file.name)
     
@@ -129,7 +130,7 @@ def _generate_side_by_side_html_diff(
         '-c "let g:html_prevent_copy=\\"n\\"" '
         '-c "let g:html_ignore_folding=1" '
         '-c "TOhtml" '
-        '-c "w! {side_by_side_html_file}" '
+        '-c "w! {side_by_side_html_output_file}" '
         '-c "qa!" '
         '-- {string_output_files}'.format(
             side_by_side_html_output_file=side_by_side_html_output_file.name,
@@ -156,7 +157,7 @@ def _generate_github_rebase_comment(url_root, base_branch_name, latest_rebase):
         'end_rebase_number': latest_rebase + 1,
     }
     rebase_diff_url_template = (
-        '{url_root}/rebase_diff?'
+        '{url_root}rebase_diff?'
         'branch_name={branch_name}&'
         'rebase_start={start_branch_pointer}-{start_rebase_number}&'
         'rebase_end={end_branch_pointer}-{end_rebase_number}&'
@@ -203,7 +204,7 @@ def _generate_github_rebase_comment(url_root, base_branch_name, latest_rebase):
         'end_rebase_number': latest_rebase + 1,
     }
     rebase_commit_log_url_template = (
-        '{url_root}/rebase_commit_log_diff?'
+        '{url_root}rebase_commit_log_diff?'
         'branch_name={branch_name}&'
         'rebase_start={start_branch_pointer}-{start_rebase_number}&'
         'rebase_end={end_branch_pointer}-{end_rebase_number}&'
@@ -309,7 +310,7 @@ def _generate_github_rebase_comment(url_root, base_branch_name, latest_rebase):
             'third_rebase_number': latest_rebase + 1,
         }
         rebase_diff_series_url_template = (
-            '{url_root}/rebase_diff_series?'
+            '{url_root}rebase_diff_series?'
             'branch_name={branch_name}&'
             'rebase_first={first_branch_pointer}-{first_rebase_number}&'
             'rebase_second={second_branch_pointer}-{second_rebase_number}&'
@@ -324,7 +325,7 @@ def _generate_github_rebase_comment(url_root, base_branch_name, latest_rebase):
             'third_rebase_number': latest_rebase + 1,
         }
         rebase_commit_log_series_url_template = (
-            '{url_root}/rebase_commit_log_series?'
+            '{url_root}rebase_commit_log_series?'
             'branch_name={branch_name}&'
             'rebase_first={first_branch_pointer}-{first_rebase_number}&'
             'rebase_second={second_branch_pointer}-{second_rebase_number}&'
@@ -343,7 +344,7 @@ def _generate_github_rebase_comment(url_root, base_branch_name, latest_rebase):
             'fourth_rebase_number': latest_rebase + 1
         }
         rebase_diff_series_url_template = (
-            '{url_root}/rebase_diff_series?'
+            '{url_root}rebase_diff_series?'
             'branch_name={branch_name}&'
             'rebase_first={first_branch_pointer}-{first_rebase_number}&'
             'rebase_second={second_branch_pointer}-{second_rebase_number}&'
@@ -360,7 +361,7 @@ def _generate_github_rebase_comment(url_root, base_branch_name, latest_rebase):
             'fourth_rebase_number': latest_rebase + 1,
         }
         rebase_commit_log_series_url_template = (
-            '{url_root}/rebase_commit_log_series?'
+            '{url_root}rebase_commit_log_series?'
             'branch_name={branch_name}&'
             'rebase_first={first_branch_pointer}-{first_rebase_number}&'
             'rebase_second={second_branch_pointer}-{second_rebase_number}&'
@@ -374,8 +375,8 @@ def _generate_github_rebase_comment(url_root, base_branch_name, latest_rebase):
             third_branch_pointer='head', fourth_branch_pointer='head',
             **rebase_diff_series_url_params),
         'branch_bases': rebase_diff_series_url_template.format(
-            first_branch_pointer='head', second_branch_pointer='head',
-            third_branch_pointer='head', fourth_branch_pointer='head',
+            first_branch_pointer='base', second_branch_pointer='base',
+            third_branch_pointer='base', fourth_branch_pointer='base',
             side_by_side=1, **rebase_diff_series_url_params),
     }
  
@@ -474,7 +475,7 @@ def _validate_email(email_addr, addr_type):
 
 
 def _validate_commit(
-        commit_sha1, author, committer, title, separator, body):
+        commit_sha1, merge, author, committer, title, separator, body):
     """Check the commit message and commit diff.
 
     The commit message is checked for the following
@@ -493,6 +494,7 @@ def _validate_commit(
     Args:
         commit_sha1: The full sha1 of the commit
         author: The author value of the commit
+        merge: Set if the commit is a merge commit
         committer: The committer value of the commit
         separator: The line separating the title and the body of the
             commit message
@@ -505,8 +507,8 @@ def _validate_commit(
     """
     errors = []
 
-    author_errors = validate_email(author, 'Author')
-    committer_errors = validate_email(committer, 'Committer')
+    author_errors = _validate_email(author, 'Author')
+    committer_errors = _validate_email(committer, 'Committer')
     errors.extend(author_errors)
     errors.extend(committer_errors)
 
@@ -614,13 +616,16 @@ def _parse_commit_log(base_commit, tip_commit):
     title = None
     separator = None
     body = []
-    for line in git_log_output.splitlines():
-
+    git_log_output_lines = git_log_output.splitlines()
+    for idx, line in enumerate(git_log_output_lines, 1):
+        print 'idx {0} len(git_log_output_lines) {1}'.format(idx, len(git_log_output_lines))
         # commit line
         if (
                 log_line_state == LogState.SEPARATOR_LINE and
                 line.startswith('commit ')):
+            print 'commit line'
             commit_sha1 = line.split(' ')[1]
+            print 'commit_sha1 {0}'.format(commit_sha1)
             log_line_state = LogState.COMMIT_SHA1_LINE
             continue
 
@@ -628,7 +633,9 @@ def _parse_commit_log(base_commit, tip_commit):
         if (
                 log_line_state == LogState.COMMIT_SHA1_LINE and
                 line.startswith('Merge: ')):
+            print 'Merge: line'
             merge = line.split(' ', 1)[1]
+            print 'merge {0}'.format(merge)
             log_line_state = LogState.MERGE_LINE
             continue
 
@@ -637,18 +644,23 @@ def _parse_commit_log(base_commit, tip_commit):
                 log_line_state in [
                     LogState.COMMIT_SHA1_LINE, LogState.MERGE_LINE] and
                 line.startswith('Author: ')):
+            print 'Author: line'
             author = line.split(' ', 1)[1]
+            print 'author {0}'.format(author)
             log_line_state = LogState.AUTHOR_LINE
             continue
 
         # Commit: line
         if log_line_state == LogState.AUTHOR_LINE and line.startswith('Commit: '):
+            print 'Commit: line'
             committer = line.split(' ', 1)[1]
+            print 'committer {0}'.format(committer)
             log_line_state = LogState.COMMITTER_LINE
             continue
 
         # empty line after Commit: line
         if log_line_state == LogState.COMMITTER_LINE and line == '':
+            print 'empty line after Commit: line'
             log_line_state = LogState.MIDDLE_SEPARATOR_LINE
             continue
 
@@ -656,37 +668,63 @@ def _parse_commit_log(base_commit, tip_commit):
         if (
                 log_line_state == LogState.MIDDLE_SEPARATOR_LINE and
                 line.startswith('    ')):
+            print 'Title line of commit message'
             title = line.lstrip('    ')
+            print 'title {0}'.format(title)
             log_line_state = LogState.TITLE_LINE
-            continue
+
+            if idx < len(git_log_output_lines):
+                continue
+
+            commit_status = _validate_commit(
+                commit_sha1, merge, author, committer, title, separator, body)
+
+            commit_info[commit_sha1] = commit_status
 
         # Blank line between title and body (still contains 4 space prefix)
         if log_line_state == LogState.TITLE_LINE and line.startswith('    '):
+            print 'Blank line between title and body (still contains 4 space prefix)'
             separator = line.lstrip('    ')
+            print 'separator "{0}"'.format(separator)
             log_line_state = LogState.BLANK_LINE
-            continue
+
+            if idx < len(git_log_output_lines):
+                continue
+
+            commit_status = _validate_commit(
+                commit_sha1, merge, author, committer, title, separator, body)
+
+            commit_info[commit_sha1] = commit_status
 
         # Body lines
         if (
                 log_line_state in [LogState.BLANK_LINE, LogState.BODY_LINES] and
                 line.startswith('    ')):
+            print 'Body lines'
+            print line.lstrip('    ')
             body.append(line.lstrip('    '))
             log_line_state = LogState.BODY_LINES
-            continue
+
+            if idx < len(git_log_output_lines):
+                continue
+
+            commit_status = _validate_commit(
+                commit_sha1, merge, author, committer, title, separator, body)
+
+            commit_info[commit_sha1] = commit_status
 
         # End of commit message
         if (
                 log_line_state in [
-                    LogState.TITLE_LINE, LogState.BLANK_LINE, LogState.BODY_LINES] and
+                    LogState.TITLE_LINE, LogState.BLANK_LINE,
+                    LogState.BODY_LINES] and
                 line == ''):
 
-            commit_status = validate_commit(
-                commit_sha1, author, committer, title, separator, body)
-
+            print 'End of commit message'
+            commit_status = _validate_commit(
+                commit_sha1, merge, author, committer, title, separator, body)
 
             commit_info[commit_sha1] = commit_status
-
-            # Post commit status to Github API
 
             log_line_state = LogState.SEPARATOR_LINE
             commit_sha1 = None
@@ -697,7 +735,10 @@ def _parse_commit_log(base_commit, tip_commit):
             separator = None
             body = []
 
-        return commit_info
+        print 'commit_status {0}'.format(commit_status)
+
+    print 'commit_info {0}'.format(commit_info)
+    return commit_info
 
 
 # TODO:
@@ -789,18 +830,23 @@ def check_rebase():
             # fixup or squash commits
             fetch_base_cmd = shlex.split(
                 'git fetch git@{github_hostname}:{org_repo_name}.git '
-                'refs/heads/{base_branch_name}')
+                'refs/heads/{base_branch_name}'.format(
+                    github_hostname=GITHUB_HOSTNAME,
+                    org_repo_name=org_repo_name,
+                    base_branch_name=base_branch_name))
             subprocess.call(fetch_base_cmd)
 
             log_start_ref = 'FETCH_HEAD'
             log_end_ref = (
-                '{org}/{repo}/PR/{pr_number}/base_branch_name}/'
+                'refs/heads/{org}/{repo}/PR/{pr_number}/{base_branch_name}/'
                 'rebase-head/0'.format(
                     org=org_name, repo=repo_name, pr_number=pr_number,
                     base_branch_name=base_branch_name))
             commit_info = _parse_commit_log(log_start_ref, log_end_ref)
 
             for sha1, errors in commit_info.items():
+                print 'sha1 {0}'.format(sha1)
+                print 'errors {0}'.format(errors)
                 # If there are no issues with the commit, then skip it
                 if errors == []:
                     continue
@@ -830,13 +876,15 @@ def check_rebase():
                     continue
 
                 post_body = {
-                    'status': 'failure',
+                    'state': 'failure',
                     'context': 'gitbot',
-                    'description': ' '.join(errors)
+                    'description': '. '.join(errors)
                 }
 
                 # Set the status for this commit
-                requests.api.post(status_url, json=post_body, auth=http_auth)
+                response = requests.api.post(status_url, json=post_body, auth=http_auth)
+                print 'response.status_code {0}'.format(response.status_code)
+                print 'response.text {0}'.format(response.text)
 
     # The event type is a push to the remote
     elif event_type in ['push']:
@@ -949,20 +997,18 @@ def check_rebase():
             comment = _generate_github_rebase_comment(
                 url_root, base_branch_name, latest_rebase)
 
-
             # Post the comment on the Github PR
             post_url = (
                 '{endpoint}/repos/{org}/{repo}/issues/{pr_number}/'
                 'comments'.format(
                     endpoint=GITHUB_API_ENDPOINT, org=org_name, repo=repo_name,
                     pr_number=pr_number))
-            post_body = {'body': comment},
+            post_body = {'body': comment}
             http_auth = auth=requests.auth.HTTPBasicAuth(
                 USERNAME, PERSONAL_ACCESS_TOKEN)
 
             response = requests.api.post(
                 post_url, json=post_body, auth=http_auth)
-
         else: # This is not a rebase/amend
             # branch_name ends in rebase-head.  We want to update this
             # branch to point to the new commit. rebase-base will remain
@@ -988,8 +1034,11 @@ def check_rebase():
         # Check list of commits in branch to see if there are any
         # fixup or squash commits
         fetch_base_cmd = shlex.split(
-            'git fetch git@{github_hostname}:{org_repo_name}.git '
-            'refs/heads/{base_branch_name}')
+            'git fetch git@{github_hostname}:{org_name}/{repo_name}.git '
+            'refs/heads/{base_branch_name}'.format(
+                github_hostname=GITHUB_HOSTNAME,
+                org_name=org_name, repo_name=repo_name,
+                base_branch_name=base_branch_name))
         subprocess.call(fetch_base_cmd)
 
         log_start_ref = 'FETCH_HEAD'
@@ -997,6 +1046,8 @@ def check_rebase():
         commit_info = _parse_commit_log(log_start_ref, log_end_ref)
 
         for sha1, errors in commit_info.items():
+            print 'sha1 {0}'.format(sha1)
+            print 'errors {0}'.format(errors)
 
             # If this commit has no issues, then move onto the next one
             if errors == []:
@@ -1027,13 +1078,15 @@ def check_rebase():
                 continue
 
             post_body = {
-                'status': 'failure',
+                'state': 'failure',
                 'context': 'gitbot',
-                'description': ' '.join(errors)
+                'description': '. '.join(errors)
             }
 
             # Set the status for this commit
-            requests.api.post(status_url, json=post_body, auth=http_auth)
+            response = requests.api.post(status_url, json=post_body, auth=http_auth)
+            print 'response.status_code {0}'.format(response.status_code)
+            print 'response.text {0}'.format(response.text)
 
     return ''
 
@@ -1055,8 +1108,8 @@ def show_rebase_diff():
         # fetch the base branch from the remote so we can have a local
         # copy of the objects and its sha1 stored in FETCH_HEAD
         git_fetch_base_branch_cmd = shlex.split(
-            #'git fetch git@{github_hostname}:{org}/{repo}.git '
-            'git fetch ../git-rebase.git '
+            'git fetch git@{github_hostname}:{org}/{repo}.git '
+            # 'git fetch ../git-rebase.git '
             'refs/heads/{base_branch}'.format(
                 github_hostname=GITHUB_HOSTNAME, org=org, repo=repo,
                 base_branch=base_branch))
@@ -1140,6 +1193,7 @@ def show_rebase_diff():
         # Set the title to Rebase Diff
         html_parser = BeautifulSoup(html_diff_output, 'html.parser')
         html_parser.title.string = 'Rebase Diff'
+        return_str = str(html_parser)
 
     return Response(response=return_str, status=200)
 
@@ -1301,8 +1355,8 @@ def show_rebase_diff_series():
     # fetch the base branch from the remote so we can have a local
     # copy of the objects and its sha1 stored in FETCH_HEAD
     git_fetch_base_branch_cmd = shlex.split(
-        #'git fetch git@{github_hostname}:{org}/{repo}.git '
-        'git fetch ../git-rebase.git '
+        'git fetch git@{github_hostname}:{org}/{repo}.git '
+        #'git fetch ../git-rebase.git '
         'refs/heads/{base_branch}'.format(
             github_hostname=GITHUB_HOSTNAME, org=org, repo=repo,
             base_branch=base_branch))
@@ -1382,8 +1436,8 @@ def show_rebase_commit_log_series():
     # fetch the base branch from the remote so we can have a local
     # copy of the objects and its sha1 stored in FETCH_HEAD
     git_fetch_base_branch_cmd = shlex.split(
-        #'git fetch git@{github_hostname}:{org}/{repo}.git '
-        'git fetch ../git-rebase.git '
+        'git fetch git@{github_hostname}:{org}/{repo}.git '
+        #'git fetch ../git-rebase.git '
         'refs/heads/{base_branch}'.format(
             github_hostname=GITHUB_HOSTNAME, org=org, repo=repo,
             base_branch=base_branch))
@@ -1434,4 +1488,4 @@ def show_rebase_commit_log_series():
 
 
 if __name__ == '__main__':
-    app.run('10.4.20.87', 8000)
+    app.run('10.4.20.98', 8000)
