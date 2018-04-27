@@ -726,6 +726,46 @@ def _parse_commit_log(base_commit, tip_commit):
     return commit_info
 
 
+
+    # Even if one or more commits are marked as failed in a branch that's
+    # pull requested, Github will still consider the branch to be in a good
+    # state if the head commit is not marked as failed.  To get around
+    # this, if any of the commits in the branch are marked as failed, we
+    # mark the head commit the same way (even if there's nothing else wrong
+    # with it).
+    if branch_status_set:
+        status_url = (
+            '{endpoint}/repos/{org}/{repo}/commits/{sha1}/'
+            'statuses'.format(
+                endpoint=GITHUB_API_ENDPOINT, org=org_name,
+                repo=repo_name, sha1=head_sha1))
+        http_auth = auth=requests.auth.HTTPBasicAuth(
+            USERNAME, PERSONAL_ACCESS_TOKEN)
+
+        responses_json = requests.api.get(status_url, auth=http_auth)
+        responses = responses_json.json()
+
+        status_set = False
+        for response in responses:
+            if (
+                    response['context'] == 'gitbot' and
+                    response['state'] == 'failure'):
+                status_set = True
+                break
+
+        # If status is already set, then we don't need to set it again
+        if not status_set:
+            post_body = {
+                'state': 'failure',
+                'context': 'gitbot',
+                'description': 'Branch contains commits in failure state'
+            }
+
+            # Set the status for this commit
+            response = requests.api.post(
+                status_url, json=post_body, auth=http_auth)
+
+
 # TODO:
 # This would need to be done when a PR is opened or a commit is pushed to
 # the PR branch (which this method already checks for)
@@ -765,6 +805,7 @@ def check_rebase():
         action = request_data['action']
         head_branch_name = request_data['pull_request']['head']['ref']
         base_branch_name = request_data['pull_request']['base']['ref']
+        head_sha1 = request_data['pull_request']['head']['sha']
 
 
         # We only want to check for pull requests that have just been
@@ -779,6 +820,9 @@ def check_rebase():
                 'refs/pull/{pr_number}/head'.format(
                     github_hostname=GITHUB_HOSTNAME,
                     org_repo_name=org_repo_name, pr_number=pr_number))
+
+            # Sleep for a second before running the git fetch command
+            time.sleep(1)
             subprocess.call(fetch_cmd)
 
             # We want to create a base and head branch pointers
@@ -811,6 +855,9 @@ def check_rebase():
                     github_hostname=GITHUB_HOSTNAME,
                     org_repo_name=org_repo_name,
                     base_branch_name=base_branch_name))
+
+            # sleep for a second before running the git fetch command
+            time.sleep(1)
             subprocess.call(fetch_base_cmd)
 
             log_start_ref = 'FETCH_HEAD'
@@ -821,6 +868,7 @@ def check_rebase():
                     base_branch_name=base_branch_name))
             commit_info = _parse_commit_log(log_start_ref, log_end_ref)
 
+            branch_status_set = False
             for sha1, errors in commit_info.items():
                 # If there are no issues with the commit, then skip it
                 if errors == []:
@@ -844,12 +892,14 @@ def check_rebase():
                             response['context'] == 'gitbot' and
                             response['state'] == 'failure'):
                         status_set = True
+                        branch_status_set = True
                         break
 
                 # If status is already set, we don't need to set it again
                 if status_set:
                     continue
 
+                branch_status_set = True
                 post_body = {
                     'state': 'failure',
                     'context': 'gitbot',
@@ -858,6 +908,45 @@ def check_rebase():
 
                 # Set the status for this commit
                 response = requests.api.post(status_url, json=post_body, auth=http_auth)
+
+            # Even if one or more commits are marked as failed in a branch that's
+            # pull requested, Github will still consider the branch to be in a good
+            # state if the head commit is not marked as failed.  To get around
+            # this, if any of the commits in the branch are marked as failed, we
+            # mark the head commit the same way (even if there's nothing else wrong
+            # with it).
+            if branch_status_set:
+                print 'branch status is set'
+                status_url = (
+                    '{endpoint}/repos/{org}/{repo}/commits/{sha1}/'
+                    'statuses'.format(
+                        endpoint=GITHUB_API_ENDPOINT, org=org_name,
+                        repo=repo_name, sha1=head_sha1))
+                http_auth = auth=requests.auth.HTTPBasicAuth(
+                    USERNAME, PERSONAL_ACCESS_TOKEN)
+
+                responses_json = requests.api.get(status_url, auth=http_auth)
+                responses = responses_json.json()
+
+                status_set = False
+                for response in responses:
+                    if (
+                            response['context'] == 'gitbot' and
+                            response['state'] == 'failure'):
+                        status_set = True
+                        break
+
+                # If status is already set, then we don't need to set it again
+                if not status_set:
+                    post_body = {
+                        'state': 'failure',
+                        'context': 'gitbot',
+                        'description': 'Branch contains commits in failure state'
+                    }
+
+                    # Set the status for this commit
+                    response = requests.api.post(
+                        status_url, json=post_body, auth=http_auth)
 
     # The event type is a push to the remote
     elif event_type in ['push']:
@@ -1017,6 +1106,8 @@ def check_rebase():
                 github_hostname=GITHUB_HOSTNAME,
                 org_name=org_name, repo_name=repo_name,
                 base_branch_name=base_branch_name))
+        # Sleep for a second before issuing the git fetch command
+        time.sleep(1)
         subprocess.call(fetch_base_cmd)
 
         log_start_ref = 'FETCH_HEAD'
@@ -1055,6 +1146,7 @@ def check_rebase():
             if status_set:
                 continue
 
+            branch_status_set = True
             post_body = {
                 'state': 'failure',
                 'context': 'gitbot',
