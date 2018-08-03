@@ -152,6 +152,59 @@ def _generate_side_by_side_html_diff(
 
 def _generate_github_rebase_comment(
         sender, url_root, base_branch_name, latest_rebase):
+    '''Generate text and links for comment posted after rebase
+
+    This will generate text for a comment to be posted once a force push
+    is made to a branch that's currently associated with a pull request.
+
+    It will post links showing the change to the overall diff of the
+    branch compared to the base branch, the diff of the commit logs
+    (along with their associated diffs), and a series diff of the most
+    recent (up to) 4 revisions of the branch and the associated commit
+    log.
+
+    For BASE to BASE branch diffs, any changes made in branch before
+    rebasing will show up in the diff.  For HEAD to BASE diffs, only
+    changes introduced during the rebase process will show up in the
+    diff.  This may occur if another branch was merged into the base
+    branch of the pull request, or if the person accidentally or
+    intentionally introduced a change while rebasing.
+
+    For BASE to BASE commit log diffs, any changes in the set of the
+    commit messages or the commit messages themselves will show up in
+    the diff.  If the show diffs option is enabled, this will also show
+    any changes in the diff associated with the commit.  For HEAD to
+    BASE commit log diffs, the same types of changes will show up in the
+    diff though these changes will show the removal of the fixup! and/or
+    squash! in the diff.
+
+    For the BASE branch diff series, the changes introduced after each
+    rebase (up to 4) will show up in the side-by-side diff.  For the
+    HEAD branch diff series, the diff will show those changes made
+    before each rebase.
+
+    For the BASE commit log series, the changes in the commit messages
+    (content and ordering) will show up.  If the show diffs options is
+    enabled, this will also show any changes in the diff associated with
+    the commit.  For the HEAD commit log series, the same types of
+    changes will show up in the diff, but you will be able to see the
+    fixup! or squash! commits made before each rebase.
+
+    Args:
+        sender: The github username of the person who force pushed to
+            the PR branch
+        url_root: The hostname of the server to prepend to complete the
+            urls needed to render the diffs
+        base_branch_name: The name of the branch that corresponds to the
+            pull request (excluding the rebase count)
+        latest_rebase: The number of the current rebase.  This is used
+            to determine which branches to check when rending diffs
+
+    Returns:
+        A string that will be posted to Github as a comment (which
+        contains information and links to the various diffs associated
+        with a rebase.
+    '''
     rebase_diff_url_params = {
         'url_root': url_root,
         'branch_name': base_branch_name,
@@ -167,13 +220,6 @@ def _generate_github_rebase_comment(
     )
  
     rebase_diff_links = {
-        'head_to_head': rebase_diff_url_template.format(
-            start_branch_pointer='head', end_branch_pointer='head',
-            side_by_side=0, **rebase_diff_url_params),
-        'head_to_head_side_by_side': rebase_diff_url_template.format(
-            start_branch_pointer='head', end_branch_pointer='head',
-            side_by_side=1, **rebase_diff_url_params),
-    
         'base_to_base': rebase_diff_url_template.format(
             start_branch_pointer='base', end_branch_pointer='base',
             side_by_side=0, **rebase_diff_url_params),
@@ -189,16 +235,20 @@ def _generate_github_rebase_comment(
             side_by_side=1, **rebase_diff_url_params),
     }
  
+    rebase_diff_base_to_base_links = (
+        '[base to base]({base_to_base}) '
+        '([side by side]({base_to_base_side_by_side}))'.format(
+            **rebase_diff_links))
+    rebase_diff_head_to_base_links = (
+        '[head to base]({head_to_base}) '
+        '([side by side]({head_to_base_side_by_side}))'.format(
+            **rebase_diff_links))
     rebase_diff_block = textwrap.dedent('''
-        * Rebase diff
-          - [head to head]({head_to_head})
-            + [side by side]({head_to_head_side_by_side})
-          - [base to base]({base_to_base})
-            + [side by side]({base_to_base_side_by_side})
-          - [head to base]({head_to_base})
-            + [side by side]({head_to_base_side_by_side})\
-    '''.format(**rebase_diff_links))
- 
+        * Rebase diff {base_to_base_links} {head_to_base_links}\
+    '''.format(
+        base_to_base_links=rebase_diff_base_to_base_links,
+        head_to_base_links=rebase_diff_head_to_base_links))
+
     rebase_commit_log_url_params = {
         'url_root': url_root,
         'branch_name': base_branch_name,
@@ -214,25 +264,6 @@ def _generate_github_rebase_comment(
         'show_diffs={show_diffs}'
     )
     rebase_commit_log_links = {
-        'head_to_head': rebase_commit_log_url_template.format(
-            start_branch_pointer='head', end_branch_pointer='head',
-            side_by_side=0, show_diffs=0,
-            **rebase_commit_log_url_params),
-        'head_to_head_show_diffs': rebase_commit_log_url_template.format(
-            start_branch_pointer='head', end_branch_pointer='head',
-            side_by_side=0, show_diffs=1,
-            **rebase_commit_log_url_params),
-        'head_to_head_side_by_side': 
-            rebase_commit_log_url_template.format(
-                start_branch_pointer='head', end_branch_pointer='head',
-                side_by_side=1, show_diffs=0,
-                **rebase_commit_log_url_params),
-        'head_to_head_side_by_side_show_diffs': 
-            rebase_commit_log_url_template.format(
-                start_branch_pointer='head', end_branch_pointer='head',
-                side_by_side=1, show_diffs=1,
-                **rebase_commit_log_url_params),
-    
         'base_to_base': rebase_commit_log_url_template.format(
             start_branch_pointer='base', end_branch_pointer='base',
             side_by_side=0, show_diffs=0,
@@ -274,21 +305,30 @@ def _generate_github_rebase_comment(
                 **rebase_commit_log_url_params),
     }
  
+    rebase_commit_log_base_to_base_links = (
+        '[base to base]({base_to_base}) '
+        '([with diffs]({base_to_base_show_diffs})) '
+        '([side by side]({base_to_base_side_by_side})) '
+        '([side by side with diffs]'
+        '({base_to_base_side_by_side_show_diffs}))'.format(
+            **rebase_commit_log_links))
+
+    rebase_commit_log_head_to_base_links = (
+        '[head to base]({head_to_base}) '
+        '([with diffs]({head_to_base_show_diffs})) '
+        '([side by side]({head_to_base_side_by_side})) '
+        '([side by side with diffs]'
+        '({head_to_base_side_by_side_show_diffs}))'.format(
+            **rebase_commit_log_links))
+
+
     rebase_commit_log_block = textwrap.dedent('''
     * Rebase commit log diff
-      - [head to head]({head_to_head})
-        + [with diffs]({head_to_head_show_diffs})
-        + [side by side]({head_to_head_side_by_side})
-        + [side by side with diffs]({head_to_head_side_by_side_show_diffs})
-      - [base to base]({base_to_base})
-        + [with diffs]({base_to_base_show_diffs})
-        + [side by side]({base_to_base_side_by_side})
-        + [side by side with diffs]({base_to_base_side_by_side_show_diffs})
-      - [head to base]({head_to_base})
-        + [with diffs]({head_to_base_show_diffs})
-        + [side by side]({head_to_base_side_by_side})
-        + [side by side with diffs]({head_to_base_side_by_side_show_diffs})\
-    '''.format(**rebase_commit_log_links))
+      - {base_to_base_links}
+      - {head_to_base_links}\
+    '''.format(
+        base_to_base_links=rebase_commit_log_base_to_base_links,
+        head_to_base_links=rebase_commit_log_head_to_base_links))
  
     rebase_diff_series_url_template = ''
     rebase_commit_log_series_url_template = ''
@@ -408,28 +448,36 @@ def _generate_github_rebase_comment(
  
     if latest_rebase + 1 >= 2:
         rebase_diff_series_block = textwrap.dedent('''
-            * Rebase series diff
-              - [branch heads]({branch_heads})
-              - [branch bases]({branch_bases})
-        '''.format(**rebase_diff_series_links))
+            * Rebase series diff [branch heads]({branch_heads}) \
+            [branch bases]({branch_bases})'''.format(
+                **rebase_diff_series_links))
  
+        rebase_commit_log_series_branch_head_links = (
+            '[branch heads]({branch_heads}) '
+            '([with diffs]({branch_heads_show_diffs}))'.format(
+                **rebase_commit_log_series_links))
+        rebase_commit_log_series_branch_base_links = (
+            '[branch bases]({branch_bases}) '
+            '([with diffs]({branch_bases_show_diffs}))'.format(
+                **rebase_commit_log_series_links))
         rebase_commit_log_series_block = textwrap.dedent('''
-            * Rebase commit log series diff
-              - [branch heads]({branch_heads})
-                + [with diffs]({branch_heads_show_diffs})
-              - [branch bases]({branch_bases})
-                + [with diffs]({branch_bases_show_diffs})
-        '''.format(**rebase_commit_log_series_links))
+            * Rebase commit log series diff {branch_head_links} \
+            {branch_base_links}'''.format(
+                branch_head_links=rebase_commit_log_series_branch_head_links,
+                branch_base_links=rebase_commit_log_series_branch_base_links))
+
+    sender_block = textwrap.dedent('''
+        Branch rebased {latest_rebase} time(s), most recently by {sender}\
+    '''.format(sender=sender, latest_rebase=latest_rebase))
  
     comment_block = textwrap.dedent('''
-        {sender} rebased the branch
-
+        {sender_block}
         {rebase_diff_block}
         {rebase_commit_log_block}
         {rebase_diff_series_block}
         {rebase_commit_log_series_block}
         '''.format(
-            sender=sender,
+            sender_block=sender_block,
             rebase_diff_block=rebase_diff_block,
             rebase_commit_log_block=rebase_commit_log_block,
             rebase_diff_series_block=rebase_diff_series_block,
