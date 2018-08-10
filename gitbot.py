@@ -572,7 +572,8 @@ def _validate_commit(
         errors.append('Commit title is not in imperative tense')
 
     # Check if first word is capitalized
-    if re.match(r'^[^A-Z]', title_words[0]):
+    git_keywords = ['pick!', 'reword!', 'edit!', 'squash!', 'fixup!', 'exec']
+    if re.match(r'^[^A-Z]', title_words[0]) and title_words[0] not in git_keywords:
         errors.append('Commit title is not capitalized')
 
     # Check if this is a fixup! commit
