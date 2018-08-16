@@ -536,6 +536,7 @@ def _validate_commit(
     * Title is 50 characters or less
     * Title is in imperative mood
     * Title begins with a capital letter
+    * Title beings with verb (see commit_title_start_words)
     * Title does not end in punctuation or whitespace
     * There is a blank line separating the title and body
     * The commit message body lines do not exceed 72 characters
@@ -560,6 +561,25 @@ def _validate_commit(
     """
     errors = []
 
+    # List of words a commit title can start with
+    commit_title_start_words = [
+        'Add',
+        'Bump',
+        'Change',
+        'Create',
+        'Disable',
+        'Enable',
+        'Fix',
+        'Move',
+        'Refactor',
+        'Remove',
+        'Replace',
+        'Revert',
+        'Set',
+        'Update',
+        'Upgrade',
+        'Use',
+    ]
     author_errors = _validate_email(author, 'Author')
     committer_errors = _validate_email(committer, 'Committer')
     errors.extend(author_errors)
@@ -574,6 +594,10 @@ def _validate_commit(
     # Check if first word is capitalized
     if re.match(r'^[^A-Z]', title_words[0]):
         errors.append('Commit title is not capitalized')
+
+    # Check if title begins with known start word
+    if title_words[0] not in commit_title_start_words:
+         errors.append('Commit title does not begin with a verb')
 
     # Check if this is a fixup! commit
     if re.match(r'^fixup!', title_words[0]):
