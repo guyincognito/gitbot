@@ -615,6 +615,10 @@ def _validate_commit(
     if len(title) > 50:
         errors.append('Commit title longer than 50 characters')
 
+    # Check if separator line (between title and body) is empty
+    if separator is not None and separator != '':
+        errors.append('Missing blank line between title and body')
+
     # Check if the commit message has a body
     if body == []:
         errors.append('Missing commit message body')
