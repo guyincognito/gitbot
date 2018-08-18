@@ -615,17 +615,16 @@ def _validate_commit(
     if len(title) > 50:
         errors.append('Commit title longer than 50 characters')
 
-    if separator is not None:
-        # Check if commit message body is missing (if there is a separator)
-        if body == []:
-            errors.append('Missing commit message body')
+    # Check if the commit message has a body
+    if body == []:
+        errors.append('Missing commit message body')
 
-        # Check if any line in the body is greater than 72 characters in legnth
-        for body_line in body:
-            if len(body_line) <= 72:
-                continue
-            errors.append('Commit message body line > 72 characters')
-            break
+    # Check if any line in the body is greater than 72 characters in legnth
+    for body_line in body:
+        if len(body_line) <= 72:
+            continue
+        errors.append('Commit message body line > 72 characters')
+        break
 
     # Check if commit is a merge commit
     if merge is not None:
