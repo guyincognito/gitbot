@@ -1104,6 +1104,7 @@ def check_rebase():
         # creating a local branch that points to the head of that branch
         fetch_cmd = shlex.split('git fetch {url} {target_branch}'.format(
             url=ssh_url, target_branch=target_branch))
+        time.sleep(1)
         subprocess.call(fetch_cmd)
 
         # Check to see whether this push was a force push.  If it is,
@@ -1293,6 +1294,7 @@ def show_rebase_diff():
             'refs/heads/{base_branch}'.format(
                 github_hostname=GITHUB_HOSTNAME, org=org, repo=repo,
                 base_branch=base_branch))
+        time.sleep(1)
         subprocess.call(git_fetch_base_branch_cmd)
 
         git_diff_rebase_start_cmd = shlex.split(
@@ -1402,6 +1404,7 @@ def show_rebase_commit_log_diff():
         'refs/heads/{base_branch}'.format(
             github_hostname=GITHUB_HOSTNAME, org=org, repo=repo,
             base_branch=base_branch))
+    time.sleep(1)
     subprocess.call(git_fetch_base_branch_cmd)
 
     rebase_start_cmd = shlex.split(
@@ -1540,6 +1543,7 @@ def show_rebase_diff_series():
         'refs/heads/{base_branch}'.format(
             github_hostname=GITHUB_HOSTNAME, org=org, repo=repo,
             base_branch=base_branch))
+    time.sleep(1)
     subprocess.call(git_fetch_base_branch_cmd)
 
     # Generate the rebase commands
@@ -1621,6 +1625,7 @@ def show_rebase_commit_log_series():
         'refs/heads/{base_branch}'.format(
             github_hostname=GITHUB_HOSTNAME, org=org, repo=repo,
             base_branch=base_branch))
+    time.sleep(1)
     subprocess.call(git_fetch_base_branch_cmd)
 
     # Generate the rebase commands
