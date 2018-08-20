@@ -643,6 +643,7 @@ def _validate_commit(
     f, _ = tempfile.mkstemp()
     has_whitespace_issue = subprocess.call(git_diff_cmd,
         stdout=f, stderr=f, close_fds=True)
+    os.close(f)
 
     if has_whitespace_issue:
         errors.append(
