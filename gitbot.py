@@ -508,21 +508,25 @@ def _validate_email(email_addr, addr_type):
     email_address = email_address.strip('<>')
 
     if display_name == 'root':
-        errors.append('{addr_type} is root instead of real name'.format(
-            addr_type=addr_type))
+        errors.append((
+            '{addr_type}-root-check'.format(addr_type=lower(addr_type)),
+            '{addr_type} is root instead of real name'.format(
+                addr_type=addr_type)))
 
     if ' ' not in display_name:
-        errors.append(
+        errors.append((
+            '{addr_type}-real-name-check'.format(addr_type=lower(addr_type)),
             '{addr_type} does not contain first and last name'.format(
-                addr_type=addr_type))
+                addr_type=addr_type)))
 
     email_local, email_domain = email_address.rsplit('@', 1)
 
     github_domain_list = filter(lambda x: x, GITHUB_VALID_DOMAINS.splitlines())
     if email_domain not in github_domain_list:
-        errors.append(
+        errors.append((
+            '{addr_type}-valid-domain-check'.format(addr_type=lower(addr_type)),
             '{addr_type} email address domain must be in {domains}'.format(
-                addr_type=addr_type, domains=github_domain_list))
+                addr_type=addr_type, domains=github_domain_list)))
 
     return errors
 
@@ -556,8 +560,10 @@ def _validate_commit(
             each element corresponds to a line in the body)
 
     Returns:
-        A dict that corresponds to the HTTP POST body to send to the
-        Github commit status endpoint.
+        A dict where each value is a tuple of the context string and
+        corresponding description string (which can be used when
+        constructing the post body for the Github commit status
+        endpoint)
     """
     errors = []
 
@@ -582,57 +588,82 @@ def _validate_commit(
     ]
     author_errors = _validate_email(author, 'Author')
     committer_errors = _validate_email(committer, 'Committer')
-    errors.extend(author_errors)
-    errors.extend(committer_errors)
+
+    if author_errors:
+        errors.extend(author_errors)
+    if committer_errors:
+        errors.extend(committer_errors)
 
     title_words = title.split(' ', 1)
 
     # Check if in imperative tense
     if re.search(r'(ed|ing)$', title_words[0]):
-        errors.append('Commit title is not in imperative tense')
+        errors.append((
+            'title-imperative-tense-check',
+            'Commit title is not in imperative tense'))
 
     # Check if first word is capitalized
     if re.match(r'^[^A-Z]', title_words[0]):
-        errors.append('Commit title is not capitalized')
+        errors.append((
+            'title-capitalization-check',
+            'Commit title is not capitalized'))
 
     # Check if title begins with known start word
     if title_words[0] not in commit_title_start_words:
-         errors.append('Commit title does not begin with a verb')
+        errors.append((
+            'title-verb-check',
+            'Commit title does not begin with a verb'))
 
     # Check if this is a fixup! commit
     if re.match(r'^fixup!', title_words[0]):
-        errors.append('Commit title starts with fixup! ')
+        errors.append((
+            'title-fixup-check',
+            'Commit title starts with fixup! '))
 
     # Check if this is a squash! commit
     if re.match(r'^squash!', title_words[0]):
-        errors.append('Commit title starts with squash! ')
+        errors.append((
+            'title-squash-check',
+            'Commit title starts with squash! '))
 
     # Check if the commit title ends in whitespace or punctuation
     if len(title_words) > 1 and re.search(r'[\s\W]$', title_words[1]):
-        errors.append('Commit title ends in whitespace or punctuation')
+        errors.append((
+            'title-whitespace-punctuation-check',
+            'Commit title ends in whitespace or punctuation'))
 
     # Check if the title is greater than 50 characters in length
     if len(title) > 50:
-        errors.append('Commit title longer than 50 characters')
+        errors.append((
+            'title-length-check',
+            'Commit title longer than 50 characters'))
 
     # Check if separator line (between title and body) is empty
     if separator is not None and separator != '':
-        errors.append('Missing blank line between title and body')
+        errors.append((
+            'message-separator-check',
+            'Missing blank line between title and body'))
 
     # Check if the commit message has a body
     if body == []:
-        errors.append('Missing commit message body')
+        errors.append((
+            'body-check',
+            'Missing commit message body'))
 
     # Check if any line in the body is greater than 72 characters in legnth
     for body_line in body:
         if len(body_line) <= 72:
             continue
-        errors.append('Commit message body line > 72 characters')
+        errors.append((
+            'body-length-check',
+            'Commit message body line > 72 characters'))
         break
 
     # Check if commit is a merge commit
     if merge is not None:
-        errors.append('Commit is a merge commit')
+        errors.append((
+            'commit-merge-check',
+            'Commit is a merge commit'))
 
     # Check commit diff for whitespace errors
     git_diff_cmd = shlex.split(
@@ -646,8 +677,9 @@ def _validate_commit(
     os.close(f)
 
     if has_whitespace_issue:
-        errors.append(
-            'Commit diff has whitespace issues')
+        errors.append((
+            'diff-whitespace-check',
+            'Commit diff has whitespace issues'))
 
     return errors
 
@@ -965,7 +997,7 @@ def check_rebase():
                 status_set = False
                 for reponse in responses:
                     if (
-                            response['context'] == 'gitbot' and
+                            response['context'].startswith('gitbot') and
                             response['state'] == 'failure'):
                         status_set = True
                         branch_status_set = True
@@ -978,12 +1010,19 @@ def check_rebase():
                 branch_status_set = True
                 post_body = {
                     'state': 'failure',
-                    'context': 'gitbot',
-                    'description': '. '.join(errors)
                 }
 
-                # Set the status for this commit
-                response = requests.api.post(status_url, json=post_body, auth=http_auth)
+                # If there are a number of issues with the commit, then it's
+                # best to post a separate status for each of them.  If the
+                # description line gets too long, then the status doesn't get
+                # set like it should.
+                for error in errors:
+                    time.sleep(1)
+                    post_body['context'] = 'gitbot-{context}'.format(context=error[0])
+                    post_body['description'] = error[1]
+
+                    # Set the status for this commit
+                    response = requests.api.post(status_url, json=post_body, auth=http_auth)
 
             # Even if one or more commits are marked as failed in a branch that's
             # pull requested, Github will still consider the branch to be in a good
@@ -1007,7 +1046,7 @@ def check_rebase():
                 status_set = False
                 for response in responses:
                     if (
-                            response['context'] == 'gitbot' and
+                            response['context'].startswith('gitbot') and
                             response['state'] == 'failure'):
                         status_set = True
                         break
@@ -1016,7 +1055,7 @@ def check_rebase():
                 if not status_set:
                     post_body = {
                         'state': 'failure',
-                        'context': 'gitbot',
+                        'context': 'gitbot-branch-check',
                         'description': 'Branch contains commits in failure state'
                     }
 
@@ -1213,7 +1252,7 @@ def check_rebase():
             status_set = False
             for response in responses:
                 if (
-                        response['context'] == 'gitbot' and
+                        response['context'].startswith('gitbot') and
                         response['state'] == 'failure'):
                     status_set = True
                     branch_status_set = True
@@ -1226,11 +1265,21 @@ def check_rebase():
             branch_status_set = True
             post_body = {
                 'state': 'failure',
-                'context': 'gitbot',
-                'description': '. '.join(errors)
             }
-            # Set the status for this commit
-            response = requests.api.post(status_url, json=post_body, auth=http_auth)
+
+            # If there are a number of issues with the commit, then it's best
+            # to post a separate status for each of them.  If the description
+            # line gets too long, then the status doesn't get set like
+            # it should.
+            for error in errors:
+                time.sleep(1)
+                print error
+                post_body['context'] = 'gitbot-{context}'.format(context=error[0])
+                post_body['description'] = error[1]
+
+                # Set the status for this commit
+                response = requests.api.post(
+                    status_url, json=post_body, auth=http_auth)
 
         # Even if one or more commits are marked as failed in a branch that's
         # pull requested, Github will still consider the branch to be in a good
@@ -1253,7 +1302,7 @@ def check_rebase():
             status_set = False
             for response in responses:
                 if (
-                        response['context'] == 'gitbot' and
+                        response['context'].startswith('gitbot') and
                         response['state'] == 'failure'):
                     status_set = True
                     break
@@ -1262,7 +1311,7 @@ def check_rebase():
             if not status_set:
                 post_body = {
                     'state': 'failure',
-                    'context': 'gitbot',
+                    'context': 'gitbot-branch-check',
                     'description': 'Branch contains commits in failure state'
                 }
 
