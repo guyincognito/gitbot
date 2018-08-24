@@ -468,7 +468,7 @@ def _generate_github_rebase_comment(
 
     sender_block = textwrap.dedent('''
         Branch rebased {latest_rebase} time(s), most recently by {sender}\
-    '''.format(sender=sender, latest_rebase=latest_rebase))
+    '''.format(sender=sender, latest_rebase=latest_rebase+1))
  
     comment_block = textwrap.dedent('''
         {sender_block}
