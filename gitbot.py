@@ -471,10 +471,10 @@ def _generate_github_rebase_comment(
     '''.format(sender=sender, latest_rebase=latest_rebase+1))
  
     comment_block = textwrap.dedent('''
-        {sender_block}
-        {rebase_diff_block}
-        {rebase_commit_log_block}
-        {rebase_diff_series_block}
+        {sender_block}\
+        {rebase_diff_block}\
+        {rebase_commit_log_block}\
+        {rebase_diff_series_block}\
         {rebase_commit_log_series_block}
         '''.format(
             sender_block=sender_block,
