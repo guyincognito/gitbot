@@ -597,7 +597,7 @@ def _validate_commit(
     title_words = title.split(' ', 1)
 
     # Check if in imperative tense
-    if re.search(r'(ed|ing)$', title_words[0]):
+    if re.search(r'(ed|ing|s)$', title_words[0]):
         errors.append((
             'title-imperative-tense-check',
             'Commit title is not in imperative tense'))
