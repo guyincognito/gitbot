@@ -834,46 +834,6 @@ def _parse_commit_log(base_commit, tip_commit):
     return commit_info
 
 
-
-    # Even if one or more commits are marked as failed in a branch that's
-    # pull requested, Github will still consider the branch to be in a good
-    # state if the head commit is not marked as failed.  To get around
-    # this, if any of the commits in the branch are marked as failed, we
-    # mark the head commit the same way (even if there's nothing else wrong
-    # with it).
-    if branch_status_set:
-        status_url = (
-            '{endpoint}/repos/{org}/{repo}/commits/{sha1}/'
-            'statuses'.format(
-                endpoint=GITHUB_API_ENDPOINT, org=org_name,
-                repo=repo_name, sha1=head_sha1))
-        http_auth = auth=requests.auth.HTTPBasicAuth(
-            USERNAME, PERSONAL_ACCESS_TOKEN)
-
-        responses_json = requests.api.get(status_url, auth=http_auth)
-        responses = responses_json.json()
-
-        status_set = False
-        for response in responses:
-            if (
-                    response['context'] == 'gitbot' and
-                    response['state'] == 'failure'):
-                status_set = True
-                break
-
-        # If status is already set, then we don't need to set it again
-        if not status_set:
-            post_body = {
-                'state': 'failure',
-                'context': 'gitbot',
-                'description': 'Branch contains commits in failure state'
-            }
-
-            # Set the status for this commit
-            response = requests.api.post(
-                status_url, json=post_body, auth=http_auth)
-
-
 # TODO:
 # This would need to be done when a PR is opened or a commit is pushed to
 # the PR branch (which this method already checks for)
