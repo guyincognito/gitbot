@@ -846,6 +846,7 @@ def _parse_commit_log(base_commit, tip_commit):
                 commit_sha1, merge, author, committer, title, separator, body)
 
             commit_info[commit_sha1] = commit_status
+            break
 
         # Blank line between title and body (still contains 4 space prefix)
         if log_line_state == LogState.TITLE_LINE and line.startswith('    '):
@@ -859,6 +860,7 @@ def _parse_commit_log(base_commit, tip_commit):
                 commit_sha1, merge, author, committer, title, separator, body)
 
             commit_info[commit_sha1] = commit_status
+            break
 
         # Body lines
         if (
@@ -874,6 +876,7 @@ def _parse_commit_log(base_commit, tip_commit):
                 commit_sha1, merge, author, committer, title, separator, body)
 
             commit_info[commit_sha1] = commit_status
+            break
 
         # End of commit message
         if (
