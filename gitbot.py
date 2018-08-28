@@ -531,6 +531,71 @@ def _validate_email(email_addr, addr_type):
     return errors
 
 
+def _parse_diff(commit_sha1):
+    """Parse the diff associated with a commit
+
+    The diff associated with commit is normally the difference between
+    the state of the tree in that commit and the state of the tree in
+    one or more of its parent commits.  This method will parse that diff
+    and return a list of lines that correspond to added and/or deleted
+    lines of code.
+
+    Args:
+        commit_sha1: The commit to check
+
+    Returns:
+        A set of strings where each string is either an added or
+        removed line (including the corresponding '+' or '-' prefix).
+    """
+    class DiffState(object):
+        START = 0
+        DIFF_BLOCK_LINE = 1
+        INDEX_LINE = 2
+        A_LINE = 3
+        B_LINE = 4
+        AT_LINE = 5
+        DIFF_LINES = 6
+
+    diff_cmd = shlex.split('git show {commit_sha1}'.format(
+        commit_sha1=commit_sha1))
+    diff_output = subprocess.check_output(diff_cmd)
+
+    diff_lines = set()
+    state = DiffState.START
+    for line in diff_output.splitlines():
+        if state in [DiffState.START, DiffState.DIFF_LINES] and line.startswith('diff '):
+            state = DiffState.DIFF_BLOCK_LINE
+            continue
+
+        if state == DiffState.DIFF_BLOCK_LINE and line.startswith('index '):
+            state = DiffState.INDEX_LINE
+            continue
+
+        if state == DiffState.INDEX_LINE and line.startswith('--- '):
+            state = DiffState.A_LINE
+            continue
+
+        if state == DiffState.A_LINE and line.startswith('+++ '):
+            state = DiffState.B_LINE
+            continue
+
+        if state in [DiffState.B_LINE, DiffState.DIFF_LINES] and line.startswith('@@ '):
+            state = DiffState.AT_LINE
+            continue
+
+        if state in [DiffState.AT_LINE, DiffState.DIFF_LINES] and (
+                line.startswith(('+', '-', ' '))):
+            state = DiffState.DIFF_LINES
+
+            if line.startswith(' '):
+                continue
+            diff_lines.add(line)
+            continue
+
+        state = DiffState.START
+    return diff_lines
+
+
 def _validate_commit(
         commit_sha1, merge, author, committer, title, separator, body):
     """Check the commit message and commit diff.
