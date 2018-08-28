@@ -717,7 +717,7 @@ def _parse_commit_log(base_commit, tip_commit):
     commit_info = {}
 
     git_log_cmd = shlex.split(
-        'git log --format=full {base_commit}..{tip_commit}'.format(
+        'git log --format=full --reverse {base_commit}..{tip_commit}'.format(
             base_commit=base_commit, tip_commit=tip_commit))
     git_log_output = subprocess.check_output(git_log_cmd)
 
