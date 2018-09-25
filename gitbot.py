@@ -731,6 +731,7 @@ def _validate_commit(
         'Move',
         'Refactor',
         'Remove',
+        'Rename',
         'Replace',
         'Revert',
         'Set',
