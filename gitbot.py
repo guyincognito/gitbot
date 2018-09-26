@@ -761,6 +761,7 @@ def _validate_commit(
         'Disable',
         'Enable',
         'Fix',
+        'Make',
         'Move',
         'Refactor',
         'Remove',
