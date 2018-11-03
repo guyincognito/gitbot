@@ -509,13 +509,13 @@ def _validate_email(email_addr, addr_type):
 
     if display_name == 'root':
         errors.append((
-            '{addr_type}-root-check'.format(addr_type=lower(addr_type)),
+            '{addr_type}-root-check'.format(addr_type=addr_type.lower()),
             '{addr_type} is root instead of real name'.format(
                 addr_type=addr_type)))
 
     if ' ' not in display_name:
         errors.append((
-            '{addr_type}-real-name-check'.format(addr_type=lower(addr_type)),
+            '{addr_type}-real-name-check'.format(addr_type=addr_type.lower()),
             '{addr_type} does not contain first and last name'.format(
                 addr_type=addr_type)))
 
@@ -524,7 +524,7 @@ def _validate_email(email_addr, addr_type):
     github_domain_list = filter(lambda x: x, GITHUB_VALID_DOMAINS.splitlines())
     if email_domain not in github_domain_list:
         errors.append((
-            '{addr_type}-valid-domain-check'.format(addr_type=lower(addr_type)),
+            '{addr_type}-valid-domain-check'.format(addr_type=addr_type.lower()),
             '{addr_type} email address domain must be in {domains}'.format(
                 addr_type=addr_type, domains=github_domain_list)))
 
