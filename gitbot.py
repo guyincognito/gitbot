@@ -716,6 +716,141 @@ def _check_diff_add_delete(commit_sha1, head_sha1):
     return commit_info, branch_sha1s
 
 
+def _check_diff_move(commit_sha1, head_sha1):
+    """Check added or changed code has not been moved
+
+    We want to determine whether later commits in the same branch move
+    code that was updated in an earlier commit.
+
+    For example, if a commit adds a line:
+
+        Add this line
+
+    then this method would detect whether that line is
+    moved elsewhere in the same file or to a different file in a later
+    commit in the same branch.
+
+    If a commit removes a line like:
+
+        Remove this line
+
+    in a commit, and a subsequent commit in the branch adds that same
+    line, then this method would also detect it.
+
+    This can be done by passing a line of the commit's associated diff
+    to the -G parameter of git-log (after backslash escaping any regular
+    expression meta-characters).
+
+    Args:
+        commit_sha1: The commit whose diff we want to check
+        head_sha1: The commit that's the current head of the branch
+
+    Returns:
+        A tuple consisting of a dict mapping commit sha1 to an error
+        message (which is a tuple of the context and description used
+        in the Github status API). and a list of commits that weren't
+        marked.
+    """
+    commit_info = {}
+    branch_sha1s = []
+
+    # Get list of commits between this one and the branch head
+    git_log_cmd = shlex.split(
+        'git log --oneline --no-abbrev --reverse '
+        '{commit_sha1}..{head_sha1}'.format(
+            commit_sha1=commit_sha1, head_sha1=head_sha1))
+
+    git_log_output = subprocess.check_output(git_log_cmd)
+
+    for git_log_line in git_log_output.splitlines():
+        if git_log_line == '':
+            continue
+
+        branch_sha1, _ = git_log_line.split(' ', 1)
+        branch_sha1s.append(branch_sha1)
+
+    # If there are no commits to check then just return an empty dict
+    # and empty list tuple
+    if branch_sha1s == []:
+        return commit_info, branch_sha1s
+
+    diff_lines = _parse_diff(commit_sha1)
+
+    context = 'diff-move-check'
+    for diff_line in diff_lines:
+        line_type, line = diff_line[0], diff_line[1:]
+
+        # Skip blank lines
+        if line == '':
+            continue
+
+        # Use the -G parameter of git log to check whether an added or
+        # deleted line was moved in a later commit
+
+        # Escape regex meta-characters
+        line = re.sub(r'([].^$*+?{}\\[|()"])', r'\\\1', line)
+
+        git_log_g_str = (
+            'git log --oneline --no-abbrev --reverse -G"^{line}$" '
+            '{commit_sha1}..{head_sha1}'.format(
+                line=line, commit_sha1=commit_sha1, head_sha1=head_sha1))
+        try:
+            git_log_g_cmd = shlex.split(git_log_g_str)
+            print 'Running git log -G"^{line}$"'.format(line=line)
+            print 'git_log_g_cmd: {git_log_g_cmd}'.format(
+                git_log_g_cmd=git_log_g_cmd)
+            git_log_g_output = subprocess.check_output(git_log_g_cmd)
+            print 'git_log_g_output: {git_log_g_output}'.format(
+                git_log_g_output=git_log_g_output)
+
+        except (subprocess.CalledProcessError, ValueError) as e:
+            print 'Exception when running git log -G"^{line}$"'.format(line=line)
+            print 'Exception was {e}'.format(e=e)
+            try:
+                print 'git_log_g_cmd: {git_log_g_cmd}'.format(
+                    git_log_g_cmd=git_log_g_cmd)
+            except Exception as ex:
+                print 'git_log_g_cmd not defined: {ex}'.format(ex=ex)
+                print (
+                    'Failed to run shlex.split on {git_log_g_str}'.format(
+                        git_log_g_str=git_log_g_str))
+            git_log_g_output = ''
+            pass
+
+        for git_log_g_line in git_log_g_output.splitlines():
+            sha1_g, _ = git_log_g_line.split(' ', 1)
+
+            if sha1_g not in commit_info.keys():
+                message = None
+                if line_type == '+':
+                    description = (
+                        'Removes a line matching a line added in '
+                        '{commit_sha1}'.format(commit_sha1=commit_sha1))
+                    message = context, description
+                elif line_type == '-':
+                    description = (
+                        'Re-adds a line matching a line removed in '
+                        '{commit_sha1}'.format(commit_sha1=commit_sha1))
+                    message = context, description
+                else:
+                    print (
+                        'Got line_type "{line_type}" instead of '
+                        '"-" or "+" in _check_diff_move'.format(line_type=line_type))
+
+                commit_info[sha1_g] = [message]
+
+            # Remove this sha1 from branch_sha1s
+            if sha1_g in branch_sha1s:
+                branch_sha1s.remove(sha1_g)
+
+            # If we have already marked all the existing commits in the
+            # branch, then break out of the loop
+            if branch_sha1s == []:
+                return commit_info, branch_sha1s
+
+    return commit_info, branch_sha1s
+
+
 def _validate_commit(
         commit_sha1, merge, author, committer, title, separator, body):
     """Check the commit message and commit diff.
