@@ -1037,6 +1037,8 @@ def _parse_commit_log(base_commit, tip_commit):
         BODY_LINES = 8
 
     commit_info = {}
+    check_churn = True
+    check_move = True
 
     git_log_cmd = shlex.split(
         'git log --format=full --reverse {base_commit}..{tip_commit}'.format(
@@ -1102,7 +1104,38 @@ def _parse_commit_log(base_commit, tip_commit):
             commit_status = _validate_commit(
                 commit_sha1, merge, author, committer, title, separator, body)
 
-            commit_info[commit_sha1] = commit_status
+            if commit_sha1 not in commit_info.keys():
+                commit_info[commit_sha1] = commit_status
+            else:
+                commit_info[commit_sha1].extend(commit_status)
+
+            if check_churn:
+                commit_churn_info, branch_churn_sha1s = _check_diff_add_delete(
+                    commit_sha1, tip_commit)
+
+                for commit_churn_sha1 in commit_churn_info.keys():
+                    if commit_churn_sha1 not in commit_info.keys():
+                        commit_info[commit_churn_sha1] = commit_churn_info[
+                            commit_churn_sha1]
+                    else:
+                        commit_info[commit_churn_sha1].extend(
+                            commit_churn_info[commit_churn_sha1])
+
+                check_churn = bool(branch_churn_sha1s)
+
+            if check_move:
+                commit_move_info, branch_move_sha1s = _check_diff_move(
+                    commit_sha1, tip_commit)
+
+                for commit_move_sha1 in commit_move_info.keys():
+                    if commit_move_sha1 not in commit_info.keys():
+                        commit_info[commit_move_sha1] = commit_move_info[
+                            commit_move_sha1]
+                    else:
+                        commit_info[commit_move_sha1].extend(
+                            commit_move_info[commit_move_sha1])
+
+                check_move = bool(branch_move_sha1s)
             break
 
         # Blank line between title and body (still contains 4 space prefix)
@@ -1116,7 +1149,38 @@ def _parse_commit_log(base_commit, tip_commit):
             commit_status = _validate_commit(
                 commit_sha1, merge, author, committer, title, separator, body)
 
-            commit_info[commit_sha1] = commit_status
+            if commit_sha1 not in commit_info.keys():
+                commit_info[commit_sha1] = commit_status
+            else:
+                commit_info[commit_sha1].extend(commit_status)
+
+            if check_churn:
+                commit_churn_info, branch_churn_sha1s = _check_diff_add_delete(
+                    commit_sha1, tip_commit)
+
+                for commit_churn_sha1 in commit_churn_info.keys():
+                    if commit_churn_sha1 not in commit_info.keys():
+                        commit_info[commit_churn_sha1] = commit_churn_info[
+                            commit_churn_sha1]
+                    else:
+                        commit_info[commit_churn_sha1].extend(
+                            commit_churn_info[commit_churn_sha1])
+
+                check_churn = bool(branch_churn_sha1s)
+
+            if check_move:
+                commit_move_info, branch_move_sha1s = _check_diff_move(
+                    commit_sha1, tip_commit)
+
+                for commit_move_sha1 in commit_move_info.keys():
+                    if commit_move_sha1 not in commit_info.keys():
+                        commit_info[commit_move_sha1] = commit_move_info[
+                            commit_move_sha1]
+                    else:
+                        commit_info[commit_move_sha1].extend(
+                            commit_move_info[commit_move_sha1])
+
+                check_move = bool(branch_move_sha1s)
             break
 
         # Body lines
@@ -1132,7 +1196,38 @@ def _parse_commit_log(base_commit, tip_commit):
             commit_status = _validate_commit(
                 commit_sha1, merge, author, committer, title, separator, body)
 
-            commit_info[commit_sha1] = commit_status
+            if commit_sha1 not in commit_info.keys():
+                commit_info[commit_sha1] = commit_status
+            else:
+                commit_info[commit_sha1].extend(commit_status)
+
+            if check_churn:
+                commit_churn_info, branch_churn_sha1s = _check_diff_add_delete(
+                    commit_sha1, tip_commit)
+
+                for commit_churn_sha1 in commit_churn_info.keys():
+                    if commit_churn_sha1 not in commit_info.keys():
+                        commit_info[commit_churn_sha1] = commit_churn_info[
+                            commit_churn_sha1]
+                    else:
+                        commit_info[commit_churn_sha1].extend(
+                            commit_churn_info[commit_churn_sha1])
+
+                check_churn = bool(branch_churn_sha1s)
+
+            if check_move:
+                commit_move_info, branch_move_sha1s = _check_diff_move(
+                    commit_sha1, tip_commit)
+
+                for commit_move_sha1 in commit_move_info.keys():
+                    if commit_move_sha1 not in commit_info.keys():
+                        commit_info[commit_move_sha1] = commit_move_info[
+                            commit_move_sha1]
+                    else:
+                        commit_info[commit_move_sha1].extend(
+                            commit_move_info[commit_move_sha1])
+
+                check_move = bool(branch_move_sha1s)
             break
 
         # End of commit message
@@ -1145,7 +1240,38 @@ def _parse_commit_log(base_commit, tip_commit):
             commit_status = _validate_commit(
                 commit_sha1, merge, author, committer, title, separator, body)
 
-            commit_info[commit_sha1] = commit_status
+            if commit_sha1 not in commit_info.keys():
+                commit_info[commit_sha1] = commit_status
+            else:
+                commit_info[commit_sha1].extend(commit_status)
+
+            if check_churn:
+                commit_churn_info, branch_churn_sha1s = _check_diff_add_delete(
+                    commit_sha1, tip_commit)
+
+                for commit_churn_sha1 in commit_churn_info.keys():
+                    if commit_churn_sha1 not in commit_info.keys():
+                        commit_info[commit_churn_sha1] = commit_churn_info[
+                            commit_churn_sha1]
+                    else:
+                        commit_info[commit_churn_sha1].extend(
+                            commit_churn_info[commit_churn_sha1])
+
+                check_churn = bool(branch_churn_sha1s)
+
+            if check_move:
+                commit_move_info, branch_move_sha1s = _check_diff_move(
+                    commit_sha1, tip_commit)
+
+                for commit_move_sha1 in commit_move_info.keys():
+                    if commit_move_sha1 not in commit_info.keys():
+                        commit_info[commit_move_sha1] = commit_move_info[
+                            commit_move_sha1]
+                    else:
+                        commit_info[commit_move_sha1].extend(
+                            commit_move_info[commit_move_sha1])
+
+                check_move = bool(branch_move_sha1s)
 
             log_line_state = LogState.SEPARATOR_LINE
             commit_sha1 = None
