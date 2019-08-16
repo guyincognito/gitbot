@@ -37,6 +37,9 @@ config = ConfigParser.ConfigParser()
 with open('gitbot.cfg') as f:
     config.readfp(f)
 
+ADDRESS = config.get('gitbot', 'address')
+PORT = config.getint('gitbot', 'port')
+
 USERNAME = config.get('github', 'username')
 PERSONAL_ACCESS_TOKEN = config.get('github', 'personal_access_token')
 GITHUB_API_ENDPOINT = config.get('github', 'endpoint')
@@ -2134,4 +2137,4 @@ def show_rebase_commit_log_series():
 
 
 if __name__ == '__main__':
-    app.run('10.4.20.98', 8000)
+    app.run(ADDRESS, PORT)
