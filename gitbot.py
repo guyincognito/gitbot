@@ -34,7 +34,7 @@ import requests.auth
 app = flask.Flask(__name__)
 
 config = ConfigParser.ConfigParser()
-with open('test.cfg') as f:
+with open('gitbot.cfg') as f:
     config.readfp(f)
 
 USERNAME = config.get('github', 'username')
