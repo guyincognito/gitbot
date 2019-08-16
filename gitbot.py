@@ -44,7 +44,8 @@ USERNAME = config.get('github', 'username')
 PERSONAL_ACCESS_TOKEN = config.get('github', 'personal_access_token')
 GITHUB_API_ENDPOINT = config.get('github', 'endpoint')
 GITHUB_HOSTNAME = config.get('github', 'hostname')
-GITHUB_VALID_DOMAINS = config.get('github', 'domains')
+
+COMMIT_VALID_DOMAINS = config.get('commit', 'domains')
 
 def _generate_html_diff(diff_output):
     """Take a diff string and convert it to syntax highligted HTML
@@ -524,7 +525,7 @@ def _validate_email(email_addr, addr_type):
 
     email_local, email_domain = email_address.rsplit('@', 1)
 
-    github_domain_list = filter(lambda x: x, GITHUB_VALID_DOMAINS.splitlines())
+    github_domain_list = filter(lambda x: x, COMMIT_VALID_DOMAINS.splitlines())
     if email_domain not in github_domain_list:
         errors.append((
             '{addr_type}-valid-domain-check'.format(addr_type=addr_type.lower()),
