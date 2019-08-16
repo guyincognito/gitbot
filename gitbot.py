@@ -46,6 +46,7 @@ GITHUB_API_ENDPOINT = config.get('github', 'endpoint')
 GITHUB_HOSTNAME = config.get('github', 'hostname')
 
 COMMIT_VALID_DOMAINS = config.get('commit', 'domains')
+COMMIT_TITLE_START_WORDS = config.get('commit', 'commit_title_start_words')
 
 def _generate_html_diff(diff_output):
     """Take a diff string and convert it to syntax highligted HTML
@@ -892,26 +893,9 @@ def _validate_commit(
     errors = []
 
     # List of words a commit title can start with
-    commit_title_start_words = [
-        'Add',
-        'Bump',
-        'Change',
-        'Create',
-        'Disable',
-        'Enable',
-        'Fix',
-        'Make',
-        'Move',
-        'Refactor',
-        'Remove',
-        'Rename',
-        'Replace',
-        'Revert',
-        'Set',
-        'Update',
-        'Upgrade',
-        'Use',
-    ]
+    commit_title_start_words = filter(
+        lambda x: x, COMMIT_TITLE_START_WORDS.splitlines())
+
     author_errors = _validate_email(author, 'Author')
     committer_errors = _validate_email(committer, 'Committer')
 
